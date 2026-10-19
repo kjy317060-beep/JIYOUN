@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>교안 PDF 요약 및 퀴즈 생성기 (Gemini)</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- PDF.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  </script>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans min-h-screen">
+
+  <div class="max-w-4xl mx-auto px-4 py-8">
+    <!-- 헤더 -->
+    <header class="text-center mb-8">
+      <h1 class="text-3xl font-bold text-indigo-700 mb-2">📚 교안 PDF 요약 & 10문항 퀴즈 생성기</h1>
+      <p class="text-gray-600">교안 PDF를 업로드하면 Gemini AI가 핵심 내용을 요약하고 4지선다 퀴즈를 자동으로 생성합니다.</p>
+    </header>
+
+    <!-- API 키 설정 카드 -->
+    <div class="bg-white p-6 rounded-lg shadow-md mb-6 border border-gray-200">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-lg font-semibold text-gray-700">🔑 Gemini API 키 설정</h2>
+        <span id="apiStatus" class="text-xs px-2 py-1 rounded bg-red-100 text-red-600 font-medium">미설정</span>
+      </div>
+      <p class="text-xs text-gray-500 mb-3">API 키는 브라우저 내부(localStorage)에만 안전하게 저장되며 외부 서버로 전송되지 않습니다.</p>
+      <div class="flex gap-2">
+        <input type="password" id="apiKeyInput" placeholder="AIzaSy..." class="flex-1 border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <button onclick="saveApiKey()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded text-sm font-medium transition">저장</button>
+        <button onclick="clearApiKey()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-2 rounded text-sm transition">초기화</button>
+      </div>
+    </div>
+
+    <!-- 파일 업로드 카드 -->
+    <div class="bg-white p-6 rounded-lg shadow-md mb-8 border border-gray-200">
+      <h2 class="text-lg font-semibold text-gray-700 mb-3">📄 교안 PDF 업로드</h2>
+      <div class="flex flex-col sm:flex-row items-center gap-3">
+        <input type="file" id="pdfFileInput" accept="application/pdf" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer">
+        <button id="generateBtn" onclick="processPdf()" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-6 py-2.5 rounded shadow text-sm whitespace-nowrap transition disabled:opacity-50">
+          분석 & 생성하기
+        </button>
+      </div>
+      <!-- 로딩 바 -->
+      <div id="loadingBox" class="hidden mt-4 p-4 bg-indigo-50 rounded border border-indigo-100 text-center">
+        <div class="inline-block animate-spin rounded-full h-6 w-6 border-4 border-indigo-600 border-t-transparent mb-2"></div>
+        <p id="loadingText" class="text-sm font-medium text-indigo-800">PDF에서 텍스트를 추출하는 중입니다...</p>
+      </div>
+    </div>
+
+    <!-- 메인 출력 구역 (초기 숨김) -->
+    <div id="outputContainer" class="hidden">
+      <!-- 탭 버튼 -->
+      <div class="flex border-b border-gray-200 mb-6">
+        <button id="tabSummaryBtn" onclick="switchTab('summary')" class="py-2 px-6 font-semibold border-b-2 border-indigo-600 text-indigo-600 focus:outline-none">
+          📌 주요 내용 요약
+        </button>
+        <button id="tabQuizBtn" onclick="switchTab('quiz')" class="py-2 px-6 font-semibold border-b-2 border-transparent text-gray-500 hover:text-indigo-600 focus:outline-none">
+          📝 예상 문제 10문항
+        </button>
+      </div>
+
+      <!-- 요약 탭 내용 -->
+      <div id="summaryTab" class="bg-white p-6 rounded-lg shadow-md border border-gray-200 space-y-6">
+        <div>
+          <h3 class="text-xl font-bold text-gray-800 mb-2 border-b pb-2">📋 핵심 요약</h3>
+          <p id="summaryText" class="text-gray-700 leading-relaxed whitespace-pre-line"></p>
+        </div>
+        <div>
+          <h3 class="text-xl font-bold text-gray-800 mb-3 border-b pb-2">💡 주요 개념 정리</h3>
+          <div id="keyConceptsList" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+        </div>
+        <div>
+          <h3 class="text-xl font-bold text-gray-800 mb-2 border-b pb-2">🎯 학습 핵심 포인트</h3>
+          <ul id="takeawaysList" class="list-disc list-inside text-gray-700 space-y-1"></ul>
+        </div>
+      </div>
+
+      <!-- 퀴즈 탭 내용 -->
+      <div id="quizTab" class="hidden space-y-6">
+        <div id="quizList" class="space-y-6"></div>
+        
+        <div class="bg-white p-6 rounded-lg shadow-md text-center border border-gray-200">
+          <button onclick="submitQuiz()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-lg font-bold px-8 py-3 rounded-lg shadow transition">
+            채점하기
+          </button>
+          <div id="quizScoreResult" class="mt-4 text-xl
